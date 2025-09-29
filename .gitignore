@@ -1,0 +1,32 @@
+# ===========================
+# OS & Editor Junk
+# ===========================
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# ===========================
+# Data Files
+# ===========================
+# Ignore large raw data files
+*.csv
+*.zip
+
+# ===========================
+# Python
+# ===========================
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.env
+*.env
+.pytest_cache/
+.mypy_cache/
+
+# ===========================
+# Jupyter Notebook
+# ===========================
+# Notebook auto-save files
+*.ipynb_checkpoints
