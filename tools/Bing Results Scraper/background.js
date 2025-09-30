@@ -23,50 +23,60 @@ async function fetchUrlContent(url, timeout = CONTENT_TIMEOUT) {
   try {
     console.log(`Background: Fetching content from ${url}`);
     
+    // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-      mode: 'cors'
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
+    try {
+      // Fetch with minimal headers to avoid blocks
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: controller.signal,
+        redirect: 'follow',
+        mode: 'cors', // Explicitly set CORS mode
+        credentials: 'omit' // Don't send credentials
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Check response status
+      if (!response.ok) {
+        console.warn(`HTTP ${response.status} for ${url}`);
+        return {
+          content: '',
+          error: `HTTP ${response.status}: ${response.statusText}`
+        };
+      }
+      
+      // Check content type
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('text/html') && 
+          !contentType.toLowerCase().includes('text/plain') &&
+          !contentType.toLowerCase().includes('application/xhtml')) {
+        console.warn(`Non-HTML content type: ${contentType} for ${url}`);
+        return {
+          content: '',
+          error: `Unsupported content type: ${contentType.split(';')[0]}`
+        };
+      }
+      
+      // Read response text
+      const html = await response.text();
+      console.log(`Background: Successfully fetched ${html.length} characters from ${url}`);
+      
       return {
-        content: '',
-        error: `HTTP ${response.status}: ${response.statusText}`
+        content: html,
+        error: null
       };
+      
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      throw fetchError;
     }
-    
-    // Check content type
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/html')) {
-      return {
-        content: '',
-        error: `Unsupported content type: ${contentType}`
-      };
-    }
-    
-    const html = await response.text();
-    console.log(`Background: Successfully fetched ${html.length} characters from ${url}`);
-    
-    return {
-      content: html,
-      error: null
-    };
     
   } catch (error) {
     console.warn(`Background: Failed to fetch ${url}:`, error.message);
@@ -77,7 +87,9 @@ async function fetchUrlContent(url, timeout = CONTENT_TIMEOUT) {
     if (error.name === 'AbortError') {
       errorMessage = 'Request timeout';
     } else if (error.message.includes('Failed to fetch')) {
-      errorMessage = 'Network error or CORS blocked';
+      errorMessage = 'Network error or blocked';
+    } else if (error.message.includes('NetworkError')) {
+      errorMessage = 'Network error';
     } else if (error.message.includes('TypeError')) {
       errorMessage = 'Invalid URL or network error';
     }
@@ -89,6 +101,37 @@ async function fetchUrlContent(url, timeout = CONTENT_TIMEOUT) {
   }
 }
 
+// Rate limiting for content fetching
+const urlFetchHistory = new Map();
+
+function canFetchUrl(url) {
+  try {
+    const domain = new URL(url).hostname;
+    const lastFetch = urlFetchHistory.get(domain);
+    const now = Date.now();
+    
+    if (!lastFetch || (now - lastFetch) >= RATE_LIMIT_MS) {
+      urlFetchHistory.set(domain, now);
+      return true;
+    }
+    
+    const waitTime = RATE_LIMIT_MS - (now - lastFetch);
+    console.log(`Rate limit: waiting ${waitTime}ms for ${domain}`);
+    return false;
+  } catch (error) {
+    return true; // Allow if URL parsing fails
+  }
+}
+
+async function fetchWithRateLimit(url, timeout) {
+  // Check rate limit
+  while (!canFetchUrl(url)) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  return fetchUrlContent(url, timeout);
+}
+
 // =============== COMMUNICATION RELAY ===============
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received message:', message.action, 'from:', sender.tab ? 'content script' : 'sidepanel');
@@ -97,18 +140,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'fetchContent') {
     console.log(`Background: Content fetch request for ${message.url}`);
     
-    fetchUrlContent(message.url, message.timeout || CONTENT_TIMEOUT)
-      .then(result => {
-        console.log(`Background: Content fetch completed for ${message.url}`);
+    // Use async handler
+    (async () => {
+      try {
+        const result = await fetchWithRateLimit(message.url, message.timeout || CONTENT_TIMEOUT);
+        console.log(`Background: Content fetch completed for ${message.url}`, 
+                    result.error ? `with error: ${result.error}` : 'successfully');
         sendResponse(result);
-      })
-      .catch(error => {
+      } catch (error) {
         console.error(`Background: Content fetch error for ${message.url}:`, error);
         sendResponse({
           content: '',
           error: error.message || 'Unknown error'
         });
-      });
+      }
+    })();
     
     return true; // Keep message channel open for async response
   }
@@ -177,26 +223,6 @@ chrome.runtime.onSuspendCanceled.addListener(() => {
   console.log('Extension suspension canceled');
 });
 
-// Rate limiting for content fetching
-const urlFetchHistory = new Map();
-
-function canFetchUrl(url) {
-  try {
-    const domain = new URL(url).hostname;
-    const lastFetch = urlFetchHistory.get(domain);
-    const now = Date.now();
-    
-    if (!lastFetch || (now - lastFetch) >= RATE_LIMIT_MS) {
-      urlFetchHistory.set(domain, now);
-      return true;
-    }
-    
-    return false;
-  } catch (error) {
-    return true; // Allow if URL parsing fails
-  }
-}
-
 // Clean up old rate limit entries periodically
 setInterval(() => {
   const now = Date.now();
@@ -207,13 +233,22 @@ setInterval(() => {
       urlFetchHistory.delete(domain);
     }
   }
+  
+  console.log(`Rate limit cleanup: ${urlFetchHistory.size} domains tracked`);
 }, 10 * 60 * 1000); // Clean every 10 minutes
 
 // Export for debugging
-if (typeof window !== 'undefined') {
-  window.backgroundScript = {
-    version: '2.0.0',
+if (typeof globalThis !== 'undefined') {
+  globalThis.backgroundScript = {
+    version: '2.1.0',
     status: 'active',
-    features: ['content-extraction', 'rate-limiting']
+    features: ['content-extraction', 'rate-limiting', 'cors-bypass'],
+    fetchUrlContent: fetchUrlContent,
+    stats: () => ({
+      trackedDomains: urlFetchHistory.size,
+      rateLimitHistory: Array.from(urlFetchHistory.entries())
+    })
   };
 }
+
+console.log('Background script ready - content fetching enabled');
