@@ -374,7 +374,7 @@ function extractTextFromHtml(html) {
       .trim();
     
     // Limit text length to prevent huge content
-    const maxLength = 10000; // 10KB of text should be reasonable
+    const maxLength = Infinity;
     if (text.length > maxLength) {
       text = text.substring(0, maxLength) + '...';
     }
