@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-
+import numpy as np
 
 
 # -------------------- Plots --------------------
@@ -148,3 +148,98 @@ def boxplot(
     plt.show()
     
     return fig, ax
+
+
+
+def heatmaps(
+    matrix: pd.DataFrame,
+    reference_df: pd.DataFrame,
+    filter_col: str | None = None,
+    title: str | None = None,
+    colorbar_label: str | None = None,
+):
+    """
+    Parameters
+    ----------        
+    matrix : pandas.DataFrame
+        Square (n×n) similarity or distance matrix; indices and columns must match query identifiers.
+        
+    reference_df : pandas.DataFrame
+        DataFrame containing query metadata; must include a "query" column.
+        
+    filter_col : str, optional
+        Column in `reference_df` to group queries by; one heatmap per unique value.
+        
+    title : str, optional
+        Figure title.
+        
+    colorbar_label : str, optional
+        Label for the colorbar.
+    """
+
+    # Reindex the matrix to match the order of queries
+    expected = pd.Index(reference_df["query"].tolist())
+    matrix = matrix.reindex(index = expected, columns = expected)
+    
+    # determine unique filter values
+    filter_groups = reference_df[filter_col].drop_duplicates().tolist()
+    n = len(filter_groups)
+    
+    # subplot grid dimensions config
+    cols = min(4, n)
+    rows = int(np.ceil(n / cols))
+    
+    # dynamic figure sizing
+    base_size = 4
+    if n <= 2:
+        base_size = 5
+    elif n >= 12:
+        base_size = 3
+    
+    fig, axes = plt.subplots(rows, cols, figsize = (base_size * cols, base_size * rows),
+                             squeeze = False, dpi = 150)
+    im = None
+    for k, group_value in enumerate(filter_groups):
+        r, c = divmod(k, cols)
+        ax = axes[r, c]
+        
+        # Indices for the current filter group
+        idx = reference_df.index[reference_df[filter_col] == group_value].tolist()
+        if not idx:
+            ax.axis("off")
+            continue
+        
+        # subset and plot the heatmap
+        sub = matrix.iloc[idx, idx].clip(0, 1).values
+        im = ax.imshow(sub, cmap = "viridis", vmin = 0, vmax = 1, interpolation = "nearest")
+        ax.grid(False)
+        
+        # Label axes
+        K = len(idx)
+        labels = [f"q{i + 1}" for i in range(K)]
+        ax.set(xticks = range(K), yticks = range(K),
+               xticklabels = labels, yticklabels = labels,
+               title=str(group_value))
+        
+        tick_fontsize = max(6, min(10, 100 / K))
+        ax.tick_params(axis = "both", labelsize = tick_fontsize)
+        ax.title.set_fontsize(12)
+    
+    # hide empty subplots
+    for k in range(n, rows * cols):
+        r, c = divmod(k, cols)
+        axes[r, c].axis("off")
+    
+    # colorbar
+    fig.subplots_adjust(right = 0.90, wspace = 0.4, hspace = 0.6, top = 0.88)
+    if im is not None:
+        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+        cbar = fig.colorbar(im, cax = cbar_ax, ticks = [0, 0.25, 0.5, 0.75, 1])
+        cbar.set_label(colorbar_label, fontsize = 12)
+        cbar.ax.tick_params(labelsize = 10)
+    
+    # main title
+    if title:
+        fig.suptitle(title, y = 0.96, fontsize = 14, fontweight = "bold")
+    
+    plt.show()
