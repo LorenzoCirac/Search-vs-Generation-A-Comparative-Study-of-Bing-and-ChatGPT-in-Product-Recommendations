@@ -177,6 +177,8 @@ def heatmaps(
         Label for the colorbar.
     """
 
+    plt.style.use("default")
+
     # Reindex the matrix to match the order of queries
     expected = pd.Index(reference_df["query"].tolist())
     matrix = matrix.reindex(index = expected, columns = expected)
@@ -198,6 +200,16 @@ def heatmaps(
     
     fig, axes = plt.subplots(rows, cols, figsize = (base_size * cols, base_size * rows),
                              squeeze = False, dpi = 150)
+
+    for ax in axes.ravel():
+        ax.set_facecolor("white")
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(1)
+            spine.set_edgecolor("black")
+
+    fig.patch.set_facecolor("white") 
+    
     im = None
     for k, group_value in enumerate(filter_groups):
         r, c = divmod(k, cols)
