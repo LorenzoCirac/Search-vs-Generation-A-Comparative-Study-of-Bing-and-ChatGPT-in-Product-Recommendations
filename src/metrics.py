@@ -27,7 +27,7 @@ def syntactic_overlap(l1: list, l2: list) -> float:
     return len(s1 & s2) / min(len(s1), len(s2))
 
 
-def semantic_overlap(l1: list, l2: list, threshold: float = 0.85, model: str = model) -> float:
+def semantic_overlap(l1: list, l2: list, threshold: float = 0.85) -> float:
     """
     Compute semantic overlap between two lists of strings by:
       1) encoding with SentenceTransformer,
@@ -44,8 +44,8 @@ def semantic_overlap(l1: list, l2: list, threshold: float = 0.85, model: str = m
         return 1.0
     if not l1 or not l2:
         return 0.0
-    if model is None:
-        model = SentenceTransformer("all-MiniLM-L6-v2")
+    # if model is None:
+    #     model = SentenceTransformer("all-MiniLM-L6-v2")
 
     # embeddings
     emb1 = model.encode(l1)

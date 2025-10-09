@@ -495,11 +495,54 @@ async function collectQueryResponse(query, force_web_search = true, retryCount =
       result.sources_cited = sourceLinks.citations || [];
       result.sources_additional = sourceLinks.additional || [];
       
-      console.log(`Found ${result.sources_cited.length} citations and ${result.sources_additional.length} additional sources`);
+      // Create union of cited and additional sources
+      const seenUrls = new Set();
+      result.sources_all = [];
+      
+      for (const source of [...result.sources_cited, ...result.sources_additional]) {
+        if (!seenUrls.has(source.url)) {
+          seenUrls.add(source.url);
+          result.sources_all.push(source);
+        }
+      }
+      
+      // Helper function to extract domain in format domain.something (second-level domain + TLD)
+      const extractDomain = (source) => {
+        try {
+          const url = new URL(source.url);
+          const hostname = url.hostname || '';
+          
+          // Split hostname by dots
+          const parts = hostname.split('.');
+          
+          // If less than 2 parts, return as is
+          if (parts.length < 2) return hostname;
+          
+          // Return last two parts (domain.tld)
+          return parts.slice(-2).join('.');
+        } catch (e) {
+          return '';
+        }
+      };
+      
+      // Extract domains from each source type
+      result.domains_cited = result.sources_cited.map(source => extractDomain(source)).filter(Boolean);
+      result.domains_additional = result.sources_additional.map(source => extractDomain(source)).filter(Boolean);
+      result.domains_all = result.sources_all.map(source => extractDomain(source)).filter(Boolean);
+      
+      // Remove duplicate domains for domains_all
+      const uniqueDomains = new Set(result.domains_all);
+      result.domains_all = Array.from(uniqueDomains);
+      
+      console.log(`Found ${result.sources_cited.length} citations, ${result.sources_additional.length} additional sources, ${result.sources_all.length} total unique sources`);
     } else {
       console.log(`No sources button found - ChatGPT did not use web search for this query${force_web_search ? ' (despite being forced)' : ''}`);
       result.sources_cited = [];
       result.sources_additional = [];
+      result.sources_all = [];
+      result.domains_cited = [];
+      result.domains_additional = [];
+      result.domains_all = [];
       
       // FAILSAFE: If web search was forced but no sources found, retry
       if (force_web_search && retryCount < maxRetries) {
@@ -527,6 +570,10 @@ async function collectQueryResponse(query, force_web_search = true, retryCount =
     // Set empty arrays if source extraction fails
     result.sources_cited = [];
     result.sources_additional = [];
+    result.sources_all = [];
+    result.domains_cited = [];
+    result.domains_additional = [];
+    result.domains_all = [];
     result.extraction_error = error.message;
   }
 
@@ -588,6 +635,10 @@ async function processQueries(queries, runs_per_q = 1, force_web_search = true) 
           web_search_forced: result.web_search_forced,
           sources_cited: formatSources(result.sources_cited),
           sources_additional: formatSources(result.sources_additional),
+          sources_all: formatSources(result.sources_all),
+          domains_cited: formatSources(result.domains_cited),
+          domains_additional: formatSources(result.domains_additional),
+          domains_all: formatSources(result.domains_all),
         };
         
         results.push(enrichedResult);
@@ -623,6 +674,7 @@ async function processQueries(queries, runs_per_q = 1, force_web_search = true) 
           web_search_forced: force_web_search,
           sources_cited: '',
           sources_additional: '',
+          sources_all: '',
         };
         
         results.push(errorResult);

@@ -27,12 +27,16 @@ def get_chatgpt_df(grouped: bool = True):
     df = pd.read_excel(CHATGPT_PATH)
     df = df[[
         "query", "product", "market_type", "query_level",
-        "response_text", "sources_cited", "sources_additional", "recommended_products"
+        "response_text", "sources_cited", "sources_additional",
+        "sources_all", "domains_cited", "domains_additional", 
+        "domains_all", "recommended_products"
     ]]
     return _process_df(
         df,
-        list_columns = ["sources_cited", "sources_additional", "recommended_products"],
-        agg_columns = ["response_text", "sources_cited", "sources_additional", "recommended_products"] if grouped else None,
+        list_columns = ["sources_cited", "sources_additional", "sources_all", "domains_cited", 
+                        "domains_additional", "domains_all", "recommended_products"],
+        agg_columns = ["response_text", "sources_cited", "sources_additional", "sources_all", "domains_cited", 
+                       "domains_additional", "domains_all", "recommended_products"] if grouped else None,
         grouped = grouped
     )
 

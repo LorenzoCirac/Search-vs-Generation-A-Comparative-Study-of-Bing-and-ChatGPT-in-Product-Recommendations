@@ -147,8 +147,6 @@ def boxplot(
     fig.tight_layout()
     plt.show()
     
-    return fig, ax
-
 
 
 def heatmaps(
