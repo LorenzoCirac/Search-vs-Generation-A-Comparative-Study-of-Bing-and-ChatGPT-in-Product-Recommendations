@@ -60,3 +60,47 @@ def semantic_overlap(l1: list, l2: list, threshold: float = 0.85) -> float:
     matches = sum(similarity_matrix[i, j] >= threshold for i, j in zip(row_idx, col_idx))
     
     return matches / min(len(l1), len(l2))
+
+
+def extrapolated_rbo(l1: list, l2: list, p = 0.9):
+    """
+    Calculate extrapolated RBO between two ranked lists.
+    - l1: First ranked list
+    - l2: Second ranked list
+    - p: Probability parameter (default 0.9), controls weight of top ranks
+    """
+    # Get all items up to a given depth
+    def set_at_depth(lst, depth):
+        ans = set()
+        for v in lst[:depth]:
+            if isinstance(v, set):
+                ans.update(v)
+            else:
+                ans.add(v)
+        return ans
+    
+    # Calculate agreement (proportion of shared items) at given depth
+    def agreement(depth):
+        set1 = set_at_depth(l1, depth)
+        set2 = set_at_depth(l2, depth)
+        len_intersection = len(set1.intersection(set2))
+        return 2 * len_intersection / (len(set1) + len(set2))
+    
+    # Calculate overlap (count of shared items) at given depth
+    def overlap(depth):
+        return agreement(depth) * min(depth, len(l1), len(l2))
+    
+    # Main calculation
+    S, L = sorted((l1, l2), key = len)
+    s, l = len(S), len(L)
+    
+    x_l = overlap(l)
+    x_s = overlap(s)
+    
+    sum1 = sum(p ** d * agreement(d) for d in range(1, l + 1))
+    sum2 = sum(p ** d * x_s * (d - s) / s / d for d in range(s + 1, l + 1))
+    
+    term1 = (1 - p) / p * (sum1 + sum2)
+    term2 = p ** l * ((x_l - x_s) / l + x_s / s)
+    
+    return term1 + term2
