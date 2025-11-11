@@ -10,7 +10,6 @@ Thumbs.db
 # Data Files
 # ===========================
 # Ignore large raw data files
-*.csv
 *.zip
 
 # ===========================
